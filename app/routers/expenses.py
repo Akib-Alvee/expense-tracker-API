@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+import datetime as dt
 
 from .. import models, schemas
 from ..deps import get_current_user, get_db
+from ..filters import Period, resolve_date_range
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -39,14 +41,21 @@ def create_expense(
 
 @router.get("", response_model=list[schemas.ExpenseOut])
 def list_expenses(
+    period: Period | None = None,
+    start_date: dt.date | None = None,
+    end_date: dt.date | None = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    stmt = (
-        select(models.Expense)
-        .where(models.Expense.user_id == current_user.id)
-        .order_by(models.Expense.date.desc(), models.Expense.id.desc())
-    )
+    start, end = resolve_date_range(period, start_date, end_date)
+
+    stmt = select(models.Expense).where(models.Expense.user_id == current_user.id)
+    if start is not None:
+        stmt = stmt.where(models.Expense.date >= start)
+    if end is not None:
+        stmt = stmt.where(models.Expense.date <= end)
+
+    stmt = stmt.order_by(models.Expense.date.desc(), models.Expense.id.desc())
     return db.scalars(stmt).all()
 
 
